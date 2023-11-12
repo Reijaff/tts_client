@@ -51,7 +51,7 @@ def tts_output(audio_filepath):
     print("hello from tts_output")
     global pipe_client
     addon_prefs = bpy.context.preferences.addons[__package__].preferences
-    addon_data = bpy.context.scene.qnal_data
+    addon_data = bpy.context.scene.tts_client_data
 
     addon_prefs.tts_server_status = "processing"
     payload = {
@@ -74,7 +74,7 @@ class TTS_Audio_Add(bpy.types.Operator):
     def execute(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
 
-        _input_text = bpy.context.scene.qnal_data.input_text
+        _input_text = bpy.context.scene.tts_client_data.input_text
         _preview_folder = addon_prefs.tts_audio_preview_folder
 
         if _input_text == "":
@@ -141,9 +141,9 @@ class TTS_Audio_Play(bpy.types.Operator):
 
     def execute(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
-        addon_data = bpy.context.scene.qnal_data
+        addon_data = bpy.context.scene.tts_client_data
         _preview_folder = addon_prefs.tts_audio_preview_folder
-        _input_text = bpy.context.scene.qnal_data.input_text
+        _input_text = bpy.context.scene.tts_client_data.input_text
 
         if _input_text == "":
             self.report({"ERROR"}, "Input text is empty")
@@ -190,7 +190,7 @@ class TTS_Audio_Pause(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        addon_data = context.scene.qnal_data
+        addon_data = context.scene.tts_client_data
         # if (addon_data.audio_loaded):
         addon_data.audio_is_playing = False
         TTS_Audio_Play.handle.stop()
@@ -231,7 +231,7 @@ class TTS_PT_subpanel_synthesize(bpy.types.Panel):
 
     def draw(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
-        addon_data = context.scene.qnal_data
+        addon_data = context.scene.tts_client_data
         # if addon_prefs.docker_server_status != "on":
             # col = self.layout.column(align=True)
             # col.label(text="Error accessing docker server", icon="ERROR")
@@ -264,7 +264,7 @@ class TTS_PT_subpanel_settings(bpy.types.Panel):
     bl_category = "TTS"
 
     def draw(self, context):
-        addon_data = context.scene.qnal_data
+        addon_data = context.scene.tts_client_data
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
 
         col = self.layout.column(align=True)

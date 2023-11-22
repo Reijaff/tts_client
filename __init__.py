@@ -3,10 +3,10 @@ bl_info = {
     "author": "reijaff",
     "description": "",
     "blender": (3, 4, 0),
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "location": "",
     "warning": "",
-    "category": "Generic"
+    "category": "Generic",
 }
 
 import subprocess
@@ -19,6 +19,9 @@ import aud
 import sys
 import os
 import bpy
+import json
+import whisper_timestamped as whisper
+
 
 class TtsClientAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
@@ -33,9 +36,9 @@ class TtsClientAddonPreferences(bpy.types.AddonPreferences):
         name="Common folder path for TTS audio",
         description="Common folder path where TTS audio are stored",
         subtype="DIR_PATH",
-        default=os.path.join(
-            bpy.utils.user_resource("DATAFILES"), "tts_audio"),
+        default=os.path.join(bpy.utils.user_resource("DATAFILES"), "tts_audio"),
     )
+
 
 class TtsClientData(bpy.types.PropertyGroup):
     """Setting per Scene"""
@@ -44,6 +47,10 @@ class TtsClientData(bpy.types.PropertyGroup):
 
     input_text: bpy.props.StringProperty(
         description="Text to synthesize", default="Everything is a test!"
+    )
+
+    add_transcription: bpy.props.BoolProperty(
+        description="Add transcription", default=True
     )
 
 
@@ -73,6 +80,7 @@ class TTS_Audio_Add(bpy.types.Operator):
 
     def execute(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        addon_data = bpy.context.scene.tts_client_data
 
         _input_text = bpy.context.scene.tts_client_data.input_text
         _preview_folder = addon_prefs.tts_audio_preview_folder
@@ -86,13 +94,11 @@ class TTS_Audio_Add(bpy.types.Operator):
             return {"FINISHED"}
 
         # algorithm for audio name
-        audio_name = hashlib.md5(
-            _input_text.encode("utf-8")).hexdigest() + ".wav"
+        audio_name = hashlib.md5(_input_text.encode("utf-8")).hexdigest() + ".wav"
 
         # create directory for audio
         folderpath = os.path.join(
-            os.path.dirname(
-                bpy.data.filepath), addon_prefs.tts_audio_project_folder
+            os.path.dirname(bpy.data.filepath), addon_prefs.tts_audio_project_folder
         )
         if not os.path.isdir(folderpath):
             os.makedirs(folderpath, exist_ok=True)
@@ -125,6 +131,25 @@ class TTS_Audio_Add(bpy.types.Operator):
         )
         newStrip.show_waveform = True
         newStrip.sound.use_mono = True
+
+        if addon_data.add_transcription:
+            audio = whisper.load_audio(audio_filepath)
+            model = whisper.load_model("tiny", device="cpu")
+            result = whisper.transcribe(model, audio, language="en")
+
+            framerate = bpy.context.scene.render.fps
+
+            my_words = []
+            for i in result["segments"]:
+                my_words += i["words"]
+
+            for i in my_words:
+                bpy.context.scene.timeline_markers.new(
+                    name="{}".format(i["text"]),
+                    frame=(bpy.context.scene.frame_current + int(framerate * i["start"])),
+                )
+
+
         # bpy.context.scene.sequence_editor.sequences_all[
         # newStrip.name
         # ].frame_start = bpy.context.scene.frame_current
@@ -154,8 +179,7 @@ class TTS_Audio_Play(bpy.types.Operator):
             return {"FINISHED"}
 
         # algorithm for audio name
-        audio_name = hashlib.md5(
-            _input_text.encode("utf-8")).hexdigest() + ".wav"
+        audio_name = hashlib.md5(_input_text.encode("utf-8")).hexdigest() + ".wav"
 
         # create directory for audio
 
@@ -167,7 +191,6 @@ class TTS_Audio_Play(bpy.types.Operator):
             tts_output(audio_filepath)
 
         try:
-
             # Playing file audio_filepath
             addon_data.audio_is_playing = True
             device = aud.Device()
@@ -212,9 +235,9 @@ class TTS_PT_Panel(bpy.types.Panel):
 
         # self.logger.info(f"docker access:{addon_prefs.docker_access}")
         # if not addon_prefs.docker_access:
-            # col = self.layout.column(align=True)
-            # col.label(text="Error accessing docker", icon="ERROR")
-            # col.label(text="Check Addon Preferences")
+        # col = self.layout.column(align=True)
+        # col.label(text="Error accessing docker", icon="ERROR")
+        # col.label(text="Check Addon Preferences")
 
 
 class TTS_PT_subpanel_synthesize(bpy.types.Panel):
@@ -227,15 +250,15 @@ class TTS_PT_subpanel_synthesize(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return True#bpy.context.preferences.addons[__package__].preferences.docker_access
+        return True  # bpy.context.preferences.addons[__package__].preferences.docker_access
 
     def draw(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
         addon_data = context.scene.tts_client_data
         # if addon_prefs.docker_server_status != "on":
-            # col = self.layout.column(align=True)
-            # col.label(text="Error accessing docker server", icon="ERROR")
-            # col.label(text="Launch docker server first")
+        # col = self.layout.column(align=True)
+        # col.label(text="Error accessing docker server", icon="ERROR")
+        # col.label(text="Launch docker server first")
         # else:
 
         col = self.layout.column(align=True)
@@ -244,15 +267,14 @@ class TTS_PT_subpanel_synthesize(bpy.types.Panel):
 
         row = self.layout.row(align=True)
         if addon_data.audio_is_playing:
-            row.operator("tts_client.tts_audio_pause",
-                            text="Pause", icon="PAUSE")
+            row.operator("tts_client.tts_audio_pause", text="Pause", icon="PAUSE")
         else:
-            row.operator("tts_client.tts_audio_play",
-                            text="Play", icon="PLAY_SOUND")
+            row.operator("tts_client.tts_audio_play", text="Play", icon="PLAY_SOUND")
 
-        # row.separator()
-        row.operator("tts_client.tts_audio_add",
-                        text="Add", icon="NLA_PUSHDOWN")
+        row.operator("tts_client.tts_audio_add", text="Add", icon="NLA_PUSHDOWN")
+
+        col = self.layout.column(align=True)
+        col.prop(addon_data, "add_transcription", text="Transcription markers")
 
 
 class TTS_PT_subpanel_settings(bpy.types.Panel):
@@ -270,15 +292,15 @@ class TTS_PT_subpanel_settings(bpy.types.Panel):
         col = self.layout.column(align=True)
         # col.operator("qnal.test_operator", text="test operator")
         # if addon_prefs.audacity_initialized:
-            # col.prop(
-                # addon_data,
-                # "audacity_declicker",
-                # text="Audacity De-Clicker",
-                # toggle=True,
-            # )
+        # col.prop(
+        # addon_data,
+        # "audacity_declicker",
+        # text="Audacity De-Clicker",
+        # toggle=True,
+        # )
         # else:
-            # col.label(text="Error accessing Audacity", icon="ERROR")
-            # col.label(text="Setup Audacity Python API")
+        # col.label(text="Error accessing Audacity", icon="ERROR")
+        # col.label(text="Setup Audacity Python API")
 
         box = self.layout.box()
         col = box.column()  # align=True)
@@ -292,23 +314,18 @@ class TTS_PT_subpanel_settings(bpy.types.Panel):
         col.prop(addon_data, "vctk_vits_speaker_idx", text="Speaker id")
 
         # if addon_prefs.docker_server_status == "on":
-            # col.operator("qnal.docker_stop",
-                         # text="Stop docker server", icon="PAUSE")
+        # col.operator("qnal.docker_stop",
+        # text="Stop docker server", icon="PAUSE")
         # elif addon_prefs.docker_server_status == "loading ...":
-            # col.label(text=addon_prefs.docker_server_status)
+        # col.label(text=addon_prefs.docker_server_status)
         # elif addon_prefs.docker_server_status == "off":
-            # col.operator("qnal.docker_launch",
-                         # text="Launch docker server", icon="PLAY")
-
-
-
-
+        # col.operator("qnal.docker_launch",
+        # text="Launch docker server", icon="PLAY")
 
 
 classes = [
     TtsClientAddonPreferences,
     TtsClientData,
-
     TTS_Audio_Play,
     TTS_Audio_Add,
     TTS_Audio_Pause,
@@ -318,17 +335,14 @@ classes = [
 ]
 
 
-
-
-
 def register():
     for c in classes:
         bpy.utils.register_class(c)
 
-    bpy.types.Scene.tts_client_data = bpy.props.PointerProperty(
-        type=TtsClientData)
+    bpy.types.Scene.tts_client_data = bpy.props.PointerProperty(type=TtsClientData)
+
 
 def unregister():
-
     for c in classes[::-1]:
         bpy.utils.unregister_class(c)
+

@@ -12,6 +12,7 @@ bl_info = {
 import subprocess
 import requests
 import hashlib
+import threading
 import asyncio
 import shutil
 import time
@@ -21,6 +22,17 @@ import os
 import bpy
 import json
 import whisper_timestamped as whisper
+
+
+
+
+wm = bpy.context.window_manager
+
+def progress_func():
+    tot = 100
+    wm.progress_begin(0, tot)
+    for i in range(tot):
+        wm.progress_update(i)
 
 
 class TtsClientAddonPreferences(bpy.types.AddonPreferences):
@@ -79,6 +91,10 @@ class TTS_Audio_Add(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+
+        pf1 = threading.Thread(target=progress_func, args=())
+        pf1.start()
+
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
         addon_data = bpy.context.scene.tts_client_data
 
@@ -149,6 +165,7 @@ class TTS_Audio_Add(bpy.types.Operator):
                     frame=(bpy.context.scene.frame_current + int(framerate * i["start"])),
                 )
 
+        wm.progress_end()
 
         # bpy.context.scene.sequence_editor.sequences_all[
         # newStrip.name
@@ -165,6 +182,11 @@ class TTS_Audio_Play(bpy.types.Operator):
     handle = 0
 
     def execute(self, context):
+
+        # progress from [0 - 1000]
+        pf2 = threading.Thread(target=progress_func, args=())
+        pf2.start()
+
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
         addon_data = bpy.context.scene.tts_client_data
         _preview_folder = addon_prefs.tts_audio_preview_folder
@@ -189,6 +211,8 @@ class TTS_Audio_Play(bpy.types.Operator):
 
         if not os.path.isfile(audio_filepath):
             tts_output(audio_filepath)
+
+        wm.progress_end()
 
         try:
             # Playing file audio_filepath
@@ -345,4 +369,5 @@ def register():
 def unregister():
     for c in classes[::-1]:
         bpy.utils.unregister_class(c)
+
 

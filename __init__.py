@@ -24,9 +24,10 @@ import bpy
 import json
 
 
-
+transcription_cache = {}
 
 wm = bpy.context.window_manager
+
 
 def progress_func():
     tot = 100
@@ -65,6 +66,7 @@ class TtsClientData(bpy.types.PropertyGroup):
         description="Add transcription", default=True
     )
 
+
 def tts_output(audio_filepath):
     print("hello from tts_output")
     global pipe_client
@@ -83,7 +85,7 @@ def tts_output(audio_filepath):
 
     with open(audio_filepath, "wb") as f:
         f.write(base64.b64decode(ret_data["audio"]))
-    
+
     return ret_data["transcription"]
 
 
@@ -94,8 +96,6 @@ class TTS_Audio_Add(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        transcription = None
-
         pf1 = threading.Thread(target=progress_func, args=())
         pf1.start()
 
@@ -130,7 +130,7 @@ class TTS_Audio_Add(bpy.types.Operator):
             shutil.copy(preview_filepath, audio_filepath)
 
         if not os.path.isfile(audio_filepath):
-            transcription = tts_output(audio_filepath)
+            transcription_cache[audio_name] = tts_output(audio_filepath)
 
         if not bpy.context.scene.sequence_editor:
             bpy.context.scene.sequence_editor_create()
@@ -152,18 +152,23 @@ class TTS_Audio_Add(bpy.types.Operator):
         newStrip.show_waveform = True
         newStrip.sound.use_mono = True
 
-        if transcription:
+        # transcription = transcription_cache[audio_filepath]
 
+        # if transcription:
+        # print("add: ", transcription_cache)
+        if audio_name in transcription_cache:
             framerate = bpy.context.scene.render.fps
 
             my_words = []
-            for i in transcription["segments"]:
+            for i in transcription_cache[audio_name]["segments"]:
                 my_words += i["words"]
 
             for i in my_words:
                 bpy.context.scene.timeline_markers.new(
                     name="{}".format(i["text"]),
-                    frame=(bpy.context.scene.frame_current + int(framerate * i["start"])),
+                    frame=(
+                        bpy.context.scene.frame_current + int(framerate * i["start"])
+                    ),
                 )
 
         wm.progress_end()
@@ -183,7 +188,6 @@ class TTS_Audio_Play(bpy.types.Operator):
     handle = 0
 
     def execute(self, context):
-
         # progress from [0 - 1000]
         pf2 = threading.Thread(target=progress_func, args=())
         pf2.start()
@@ -211,8 +215,9 @@ class TTS_Audio_Play(bpy.types.Operator):
         audio_filepath = os.path.join(_preview_folder, audio_name)
 
         if not os.path.isfile(audio_filepath):
-            tts_output(audio_filepath)
+            transcription_cache[audio_name] = tts_output(audio_filepath)
 
+        # print("add: ", transcription_cache)
         wm.progress_end()
 
         try:
@@ -370,6 +375,4 @@ def register():
 def unregister():
     for c in classes[::-1]:
         bpy.utils.unregister_class(c)
-
-
 

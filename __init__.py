@@ -12,6 +12,7 @@ bl_info = {
 import subprocess
 import requests
 import hashlib
+import base64
 import threading
 import asyncio
 import shutil
@@ -21,7 +22,6 @@ import sys
 import os
 import bpy
 import json
-import whisper_timestamped as whisper
 
 
 
@@ -65,7 +65,6 @@ class TtsClientData(bpy.types.PropertyGroup):
         description="Add transcription", default=True
     )
 
-
 def tts_output(audio_filepath):
     print("hello from tts_output")
     global pipe_client
@@ -75,13 +74,17 @@ def tts_output(audio_filepath):
     addon_prefs.tts_server_status = "processing"
     payload = {
         "text": addon_data.input_text,
+        "transcription": addon_data.add_transcription,
         # "speaker_id": addon_data.vctk_vits_speaker_idx,
     }
     ret = requests.get("http://127.0.0.1:5300/api/balacoon_tts", params=payload)
     addon_prefs.tts_server_status = "free"
+    ret_data = ret.json()
 
     with open(audio_filepath, "wb") as f:
-        f.write(ret.content)
+        f.write(base64.b64decode(ret_data["audio"]))
+    
+    return ret_data["transcription"]
 
 
 class TTS_Audio_Add(bpy.types.Operator):
@@ -91,6 +94,7 @@ class TTS_Audio_Add(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        transcription = None
 
         pf1 = threading.Thread(target=progress_func, args=())
         pf1.start()
@@ -126,7 +130,7 @@ class TTS_Audio_Add(bpy.types.Operator):
             shutil.copy(preview_filepath, audio_filepath)
 
         if not os.path.isfile(audio_filepath):
-            tts_output(audio_filepath)
+            transcription = tts_output(audio_filepath)
 
         if not bpy.context.scene.sequence_editor:
             bpy.context.scene.sequence_editor_create()
@@ -148,15 +152,12 @@ class TTS_Audio_Add(bpy.types.Operator):
         newStrip.show_waveform = True
         newStrip.sound.use_mono = True
 
-        if addon_data.add_transcription:
-            audio = whisper.load_audio(audio_filepath)
-            model = whisper.load_model("tiny", device="cpu")
-            result = whisper.transcribe(model, audio, language="en")
+        if transcription:
 
             framerate = bpy.context.scene.render.fps
 
             my_words = []
-            for i in result["segments"]:
+            for i in transcription["segments"]:
                 my_words += i["words"]
 
             for i in my_words:
@@ -369,5 +370,6 @@ def register():
 def unregister():
     for c in classes[::-1]:
         bpy.utils.unregister_class(c)
+
 
 

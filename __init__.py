@@ -65,6 +65,9 @@ class TtsClientData(bpy.types.PropertyGroup):
     add_transcription: bpy.props.BoolProperty(
         description="Add transcription", default=True
     )
+    speech_speed: bpy.props.FloatProperty(
+        description="Set speech speed", default=1.0, hard_min=0
+    )
 
 
 def tts_output(audio_filepath):
@@ -77,9 +80,10 @@ def tts_output(audio_filepath):
     payload = {
         "text": addon_data.input_text,
         "transcription": addon_data.add_transcription,
+        "speed": addon_data.speech_speed,
         # "speaker_id": addon_data.vctk_vits_speaker_idx,
     }
-    ret = requests.get("http://127.0.0.1:5300/api/balacoon_tts", params=payload)
+    ret = requests.get("http://127.0.0.1:5300/api/btts", params=payload)
     addon_prefs.tts_server_status = "free"
     ret_data = ret.json()
 
@@ -305,6 +309,7 @@ class TTS_PT_subpanel_synthesize(bpy.types.Panel):
 
         col = self.layout.column(align=True)
         col.prop(addon_data, "add_transcription", text="Transcription markers")
+        col.prop(addon_data, "speech_speed", text="Speech speed")
 
 
 class TTS_PT_subpanel_settings(bpy.types.Panel):

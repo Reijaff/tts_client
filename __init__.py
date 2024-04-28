@@ -66,7 +66,7 @@ class TtsClientData(bpy.types.PropertyGroup):
         description="Add transcription", default=True
     )
     speech_speed: bpy.props.FloatProperty(
-        description="Set speech speed", default=1.0, hard_min=0
+        description="Set speech speed", default=1.0
     )
 
 

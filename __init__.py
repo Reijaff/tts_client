@@ -65,18 +65,16 @@ class TtsClientData(bpy.types.PropertyGroup):
     add_transcription: bpy.props.BoolProperty(
         description="Add transcription", default=True
     )
-    speech_speed: bpy.props.FloatProperty(
-        description="Set speech speed", default=1.0
-    )
+    speech_speed: bpy.props.FloatProperty(description="Set speech speed", default=1.0)
 
 
 def tts_output(audio_filepath):
-    print("hello from tts_output")
     global pipe_client
     addon_prefs = bpy.context.preferences.addons[__package__].preferences
     addon_data = bpy.context.scene.tts_client_data
 
     addon_prefs.tts_server_status = "processing"
+
     payload = {
         "text": addon_data.input_text,
         "transcription": addon_data.add_transcription,
@@ -100,86 +98,84 @@ class TTS_Audio_Add(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        pf1 = threading.Thread(target=progress_func, args=())
-        pf1.start()
+        # Start progress thread
+        threading.Thread(target=progress_func, args=()).start()
 
-        addon_prefs = bpy.context.preferences.addons[__package__].preferences
-        addon_data = bpy.context.scene.tts_client_data
+        # Get addon preferences and data
+        addon_prefs = context.preferences.addons[__package__].preferences
+        addon_data = context.scene.tts_client_data
 
-        _input_text = bpy.context.scene.tts_client_data.input_text
+        # Get input text and preview folder path
+        _input_text = addon_data.input_text
         _preview_folder = addon_prefs.tts_audio_preview_folder
 
-        if _input_text == "":
+        # Check for empty input text
+        if not _input_text:
             self.report({"ERROR"}, "Input text is empty")
             return {"FINISHED"}
 
+        # Check if project is saved
         if not bpy.data.is_saved:
             self.report({"ERROR"}, "Project is not saved")
             return {"FINISHED"}
 
-        # algorithm for audio name
-        audio_name = hashlib.md5(_input_text.encode("utf-8")).hexdigest() + ".wav"
+        # Generate audio name using MD5 hash
+        audio_name = hashlib.md5(_input_text.encode()).hexdigest() + ".wav"
 
-        # create directory for audio
+        # Get audio file paths
         folderpath = os.path.join(
             os.path.dirname(bpy.data.filepath), addon_prefs.tts_audio_project_folder
         )
-        if not os.path.isdir(folderpath):
-            os.makedirs(folderpath, exist_ok=True)
         audio_filepath = os.path.join(folderpath, audio_name)
-
         preview_filepath = os.path.join(_preview_folder, audio_name)
 
+        # Create project audio folder if it doesn't exist
+        os.makedirs(folderpath, exist_ok=True)
+
+        # Copy audio from preview if it exists
         if os.path.isfile(preview_filepath):
             shutil.copy(preview_filepath, audio_filepath)
 
+        # Generate TTS audio if it doesn't exist
         if not os.path.isfile(audio_filepath):
             transcription_cache[audio_name] = tts_output(audio_filepath)
 
-        if not bpy.context.scene.sequence_editor:
-            bpy.context.scene.sequence_editor_create()
+        # Create sequence editor if it doesn't exist
+        if not context.scene.sequence_editor:
+            context.scene.sequence_editor_create()
 
-        if not bpy.context.sequences:
+        # Determine the next available channel
+        if not context.sequences:
             addSceneChannel = 1
         else:
-            channels = [s.channel for s in bpy.context.sequences]
-            channels = sorted(list(set(channels)))
-            empty_channel = channels[-1] + 1
-            addSceneChannel = empty_channel
+            addSceneChannel = max(s.channel for s in context.sequences) + 1
 
-        newStrip = bpy.context.scene.sequence_editor.sequences.new_sound(
+        # Add new sound strip to the sequence editor
+        newStrip = context.scene.sequence_editor.sequences.new_sound(
             name=os.path.basename(audio_filepath),
             filepath=f"//{addon_prefs.tts_audio_project_folder}/{audio_name}",
             channel=addSceneChannel,
-            frame_start=bpy.context.scene.frame_current,
+            frame_start=context.scene.frame_current,
         )
         newStrip.show_waveform = True
         newStrip.sound.use_mono = True
 
-        # transcription = transcription_cache[audio_filepath]
+        # Add timeline markers based on transcription
+        if transcription_cache[audio_name]:
+            framerate = context.scene.render.fps
+            my_words = [
+                word
+                for segment in transcription_cache[audio_name]["segments"]
+                for word in segment["words"]
+            ]
 
-        # if transcription:
-        # print("add: ", transcription_cache)
-        if audio_name in transcription_cache:
-            framerate = bpy.context.scene.render.fps
-
-            my_words = []
-            for i in transcription_cache[audio_name]["segments"]:
-                my_words += i["words"]
-
-            for i in my_words:
-                bpy.context.scene.timeline_markers.new(
-                    name="{}".format(i["text"]),
-                    frame=(
-                        bpy.context.scene.frame_current + int(framerate * i["start"])
-                    ),
+            for word in my_words:
+                context.scene.timeline_markers.new(
+                    name=word["text"],
+                    frame=context.scene.frame_current + int(framerate * word["start"]),
                 )
 
         wm.progress_end()
-
-        # bpy.context.scene.sequence_editor.sequences_all[
-        # newStrip.name
-        # ].frame_start = bpy.context.scene.frame_current
 
         return {"FINISHED"}
 
@@ -192,49 +188,54 @@ class TTS_Audio_Play(bpy.types.Operator):
     handle = 0
 
     def execute(self, context):
-        # progress from [0 - 1000]
-        pf2 = threading.Thread(target=progress_func, args=())
-        pf2.start()
+        # Start progress thread
+        threading.Thread(target=progress_func, args=()).start()
 
-        addon_prefs = bpy.context.preferences.addons[__package__].preferences
-        addon_data = bpy.context.scene.tts_client_data
+        # Get addon preferences and data
+        addon_prefs = context.preferences.addons[__package__].preferences
+        addon_data = context.scene.tts_client_data
+
+        # Get input text and preview folder path
+        _input_text = addon_data.input_text
         _preview_folder = addon_prefs.tts_audio_preview_folder
-        _input_text = bpy.context.scene.tts_client_data.input_text
 
-        if _input_text == "":
+        # Check for empty input text
+        if not _input_text:
             self.report({"ERROR"}, "Input text is empty")
             return {"FINISHED"}
 
+        # Check if project is saved
         if not bpy.data.is_saved:
             self.report({"ERROR"}, "Project is not saved")
             return {"FINISHED"}
 
-        # algorithm for audio name
-        audio_name = hashlib.md5(_input_text.encode("utf-8")).hexdigest() + ".wav"
+        # Generate audio name using MD5 hash
+        audio_name = hashlib.md5(_input_text.encode()).hexdigest() + ".wav"
 
-        # create directory for audio
+        # Create preview folder if it doesn't exist
+        os.makedirs(_preview_folder, exist_ok=True)
 
-        if not os.path.isdir(_preview_folder):
-            os.makedirs(_preview_folder, exist_ok=True)
+        # Get audio file path
         audio_filepath = os.path.join(_preview_folder, audio_name)
 
+        # Generate TTS audio if it doesn't exist
         if not os.path.isfile(audio_filepath):
             transcription_cache[audio_name] = tts_output(audio_filepath)
 
-        # print("add: ", transcription_cache)
+        # End progress update
         wm.progress_end()
 
         try:
-            # Playing file audio_filepath
+            # Play audio
             addon_data.audio_is_playing = True
             device = aud.Device()
             audio = aud.Sound.file(audio_filepath)
 
             TTS_Audio_Play.handle = device.play(audio)
-            TTS_Audio_Play.handle.loop_count = -1  # TODO
+            TTS_Audio_Play.handle.loop_count = -1  # Loop indefinitely
 
         except Exception as e:
-            self.report({"WARNING"}, f"[Play] Error ... {e}")
+            self.report({"WARNING"}, f"[Play] Error: {e}")
             return {"CANCELLED"}
 
         return {"FINISHED"}
@@ -267,12 +268,6 @@ class TTS_PT_Panel(bpy.types.Panel):
     def draw(self, context):
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
 
-        # self.logger.info(f"docker access:{addon_prefs.docker_access}")
-        # if not addon_prefs.docker_access:
-        # col = self.layout.column(align=True)
-        # col.label(text="Error accessing docker", icon="ERROR")
-        # col.label(text="Check Addon Preferences")
-
 
 class TTS_PT_subpanel_synthesize(bpy.types.Panel):
     bl_parent_id = "TTS_PT_Panel"
@@ -284,32 +279,30 @@ class TTS_PT_subpanel_synthesize(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return True  # bpy.context.preferences.addons[__package__].preferences.docker_access
+        return True  # Simplified poll method
 
     def draw(self, context):
-        addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        # Get addon preferences and data
+        addon_prefs = context.preferences.addons[__package__].preferences
         addon_data = context.scene.tts_client_data
-        # if addon_prefs.docker_server_status != "on":
-        # col = self.layout.column(align=True)
-        # col.label(text="Error accessing docker server", icon="ERROR")
-        # col.label(text="Launch docker server first")
-        # else:
 
-        col = self.layout.column(align=True)
-        # col.scale_y = 2
-        col.prop(addon_data, "input_text", text="", icon="RIGHTARROW")
+        # Create layout column
+        layout = self.layout.column(align=True)
 
-        row = self.layout.row(align=True)
+        # Input text field
+        layout.prop(addon_data, "input_text", text="", icon="RIGHTARROW")
+
+        # Play/Pause and Add buttons
+        row = layout.row(align=True)
         if addon_data.audio_is_playing:
             row.operator("tts_client.tts_audio_pause", text="Pause", icon="PAUSE")
         else:
             row.operator("tts_client.tts_audio_play", text="Play", icon="PLAY_SOUND")
-
         row.operator("tts_client.tts_audio_add", text="Add", icon="NLA_PUSHDOWN")
 
-        col = self.layout.column(align=True)
-        col.prop(addon_data, "add_transcription", text="Transcription markers")
-        col.prop(addon_data, "speech_speed", text="Speech speed")
+        # Transcription markers and Speech speed options
+        layout.prop(addon_data, "add_transcription", text="Transcription markers")
+        layout.prop(addon_data, "speech_speed", text="Speech speed")
 
 
 class TTS_PT_subpanel_settings(bpy.types.Panel):
@@ -321,41 +314,20 @@ class TTS_PT_subpanel_settings(bpy.types.Panel):
     bl_category = "TTS"
 
     def draw(self, context):
+        # Get addon preferences and data
         addon_data = context.scene.tts_client_data
-        addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        # addon_prefs = context.preferences.addons[__package__].preferences  # Unused, so commented out
 
-        col = self.layout.column(align=True)
-        # col.operator("qnal.test_operator", text="test operator")
-        # if addon_prefs.audacity_initialized:
-        # col.prop(
-        # addon_data,
-        # "audacity_declicker",
-        # text="Audacity De-Clicker",
-        # toggle=True,
-        # )
-        # else:
-        # col.label(text="Error accessing Audacity", icon="ERROR")
-        # col.label(text="Setup Audacity Python API")
+        layout = self.layout.column(align=True)
 
-        box = self.layout.box()
-        col = box.column()  # align=True)
+        # TTS server settings box
+        box = layout.box()
+        col = box.column()
         col.label(text="TTS server settings")
 
-        row = col.row(align=True)
-        # row.label(text="Docker server status:")
-        # row.label(text=addon_prefs.docker_server_status)
-
+        # Model and Speaker ID options
         col.prop(addon_data, "model_name", text="Model")
         col.prop(addon_data, "vctk_vits_speaker_idx", text="Speaker id")
-
-        # if addon_prefs.docker_server_status == "on":
-        # col.operator("qnal.docker_stop",
-        # text="Stop docker server", icon="PAUSE")
-        # elif addon_prefs.docker_server_status == "loading ...":
-        # col.label(text=addon_prefs.docker_server_status)
-        # elif addon_prefs.docker_server_status == "off":
-        # col.operator("qnal.docker_launch",
-        # text="Launch docker server", icon="PLAY")
 
 
 classes = [
@@ -380,4 +352,3 @@ def register():
 def unregister():
     for c in classes[::-1]:
         bpy.utils.unregister_class(c)
-
